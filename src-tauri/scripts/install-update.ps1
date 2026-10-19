@@ -21,7 +21,7 @@ try {
     Move-Item -LiteralPath $Target -Destination $backupPath -Force
     $didBackup = $true
     Move-Item -LiteralPath $pendingPath -Destination $Target -Force
-    Start-Process -FilePath $Target -WorkingDirectory (Split-Path -Parent $Target) -WindowStyle Hidden
+    Start-Process -FilePath $Target -WorkingDirectory (Split-Path -Parent $Target) -WindowStyle Normal
     'Update installed successfully' | Set-Content -LiteralPath $logPath
     # Cleanup failure must not roll back an already started client
     try { Remove-Item -LiteralPath $backupPath -Force }
@@ -29,5 +29,5 @@ try {
 } catch {
     $_ | Out-String | Set-Content -LiteralPath $logPath
     if ($didBackup) { Copy-Item -LiteralPath $backupPath -Destination $Target -Force }
-    if (Test-Path -LiteralPath $Target) { Start-Process -FilePath $Target -WindowStyle Hidden }
+    if (Test-Path -LiteralPath $Target) { Start-Process -FilePath $Target -WindowStyle Normal }
 }

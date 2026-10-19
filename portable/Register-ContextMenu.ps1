@@ -33,3 +33,16 @@ Set-SvnScopeContextEntry -RegistryPath 'HKCU:\Software\Classes\Directory\Backgro
 Write-Host 'SVN Scope context menu registered for the current user.' -ForegroundColor Green
 Write-Host 'Windows 11: the entry may appear under "Show more options".'
 Write-Host 'Keep this portable folder in place; re-run this script after moving it.'
+
+# Stable shortcuts follow the same executable as the Explorer context menu
+$shortcutShell = New-Object -ComObject WScript.Shell
+foreach ($folderName in @('DesktopDirectory', 'Programs')) {
+    $shortcutPath = Join-Path ([Environment]::GetFolderPath($folderName)) 'SVN Scope.lnk'
+    $shortcut = $shortcutShell.CreateShortcut($shortcutPath)
+    $shortcut.TargetPath = $exePath
+    $shortcut.WorkingDirectory = $PSScriptRoot
+    $shortcut.IconLocation = $exePath + ',0'
+    $shortcut.Description = 'SVN Scope'
+    $shortcut.Save()
+}
+Write-Host 'SVN Scope desktop and Start menu shortcuts registered.' -ForegroundColor Green
