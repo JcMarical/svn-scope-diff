@@ -129,7 +129,10 @@ Get-ChildItem -LiteralPath $portableRoot | Where-Object {
         [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($oldPath, 'OnlyErrorDialogs', 'SendToRecycleBin')
     }
 }
-if (Test-Path 'HKCU:\Software\Classes\Directory\shell\SvnScope') {
+. (Join-Path $stableDirectory 'ContextMenu-Registry.ps1')
+$registeredEntries = @(Get-SvnScopeRegistryEntries 'HKCU:\Software\Classes') +
+    @(Get-SvnScopeRegistryEntries 'HKLM:\Software\Classes')
+if ($registeredEntries.Count -gt 0) {
     & (Join-Path $stableDirectory 'Register-ContextMenu.ps1')
 }
 

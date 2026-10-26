@@ -16,6 +16,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: npm ci
       - run: npm run test:frontend
+      - run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/context-menu.test.ps1
       - run: cargo test --manifest-path src-tauri/Cargo.toml
       - name: Validate release version
         shell: pwsh

@@ -4,10 +4,10 @@ param()
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-$registryPaths = @(
-    'HKCU:\Software\Classes\Directory\shell\SvnScope',
-    'HKCU:\Software\Classes\Directory\Background\shell\SvnScope'
-)
+. (Join-Path $PSScriptRoot 'ContextMenu-Registry.ps1')
+$registryPaths = foreach ($registryRoot in Get-SvnScopeRegistryRoots) {
+    Get-SvnScopeRegistryEntries $registryRoot
+}
 
 foreach ($registryPath in $registryPaths) {
     if (Test-Path -Path $registryPath) {
@@ -15,7 +15,7 @@ foreach ($registryPath in $registryPaths) {
     }
 }
 
-Write-Host 'SVN Scope context menu removed for the current user.' -ForegroundColor Green
+Write-Host 'SVN Scope context menu removed from all registered scopes.' -ForegroundColor Green
 Write-Host 'You can now delete the portable folder.'
 
 $exePath = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'SVN Scope.exe'))
