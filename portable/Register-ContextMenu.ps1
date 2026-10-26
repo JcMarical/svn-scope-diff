@@ -46,3 +46,5 @@ foreach ($folderName in @('DesktopDirectory', 'Programs')) {
     $shortcut.Save()
 }
 Write-Host 'SVN Scope desktop and Start menu shortcuts registered.' -ForegroundColor Green
+
+& (Join-Path $PSScriptRoot 'Refresh-ShellAssociations.ps1')

@@ -29,3 +29,5 @@ foreach ($folderName in @('DesktopDirectory', 'Programs')) {
         }
     }
 }
+
+& (Join-Path $PSScriptRoot 'Refresh-ShellAssociations.ps1')
