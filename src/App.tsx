@@ -11,6 +11,8 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { withReadTimeout } from "./readTimeout";
+import { listenForDraftClose } from "./windowClose";
 import { readRecentDirectories, rememberDirectories, saveRecentDirectories } from "./recentDirectories";
 import { ClientUpdate } from "./components/ClientUpdate";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -189,6 +191,13 @@ function getFileFingerprint(path: string) {
   return invoke<FileFingerprint>("get_file_fingerprint", { path });
 }
 
+function invokeScan<T>(command: "read_scan_history" | "open_scan" | "scan_changes" | "scan_changed_paths", args: Record<string, unknown>) {
+  const timeouts = { read_scan_history: 15000, scan_changed_paths: 120000, open_scan: 600000, scan_changes: 600000 };
+  const timeout = timeouts[command];
+  return withReadTimeout(invoke<T>(command, args), timeout,
+    "读取变更超时，已解除界面等待。后台读取可能仍在运行，可重新刷新变更或关闭窗口；当前列表尚未完成核对。");
+}
+
 function getFileDiff(change: ChangeEntry) {
   return invoke<DiffResult>("get_file_diff", {
     path: change.path,
@@ -211,14 +220,12 @@ export default function App() {
     changeDraft(undefined);
     return true;
   }, [changeDraft]);
-  useEffect(() => {
-    let stop: (() => void) | undefined;
-    let active = true;
-    void getCurrentWindow().onCloseRequested((event) => {
-      if (!discardDraft()) event.preventDefault();
-    }).then((unlisten) => { if (active) stop = unlisten; else unlisten(); });
-    return () => { active = false; stop?.(); };
-  }, [discardDraft]);
+  useEffect(() => listenForDraftClose(
+    draftContent !== undefined,
+    (handler) => getCurrentWindow().onCloseRequested(handler),
+    discardDraft,
+    (error) => setToast(`无法注册未保存编辑的关闭提示：${errorMessage(error)}`),
+  ), [draftContent !== undefined, discardDraft]);
   const [scan, setScan] = useState<ScanResult>();
   const [selected, setSelected] = useState<ChangeEntry>();
   const [diff, setDiff] = useState<DiffResult>();
@@ -439,7 +446,7 @@ export default function App() {
     }
     try {
       if (!preserveSelection) {
-        const history = await invoke<{ savedAt: number; scan: ScanResult } | null>("read_scan_history", { directories }).catch(() => null);
+        const history = await invokeScan<{ savedAt: number; scan: ScanResult } | null>("read_scan_history", { directories }).catch(() => null);
         if (history) {
           restoredHistory = true;
           activeScanDirectoryRef.current = scopeSetKey(history.scan.scopeDirectories);
@@ -451,9 +458,9 @@ export default function App() {
         }
       }
       const opened = !preserveSelection
-        ? await invoke<{ scan: ScanResult; incremental: boolean; reason: string }>("open_scan", { directories })
+        ? await invokeScan<{ scan: ScanResult; incremental: boolean; reason: string }>("open_scan", { directories })
         : undefined;
-      const scanned = opened?.scan ?? await invoke<ScanResult>("scan_changes", { directories });
+      const scanned = opened?.scan ?? await invokeScan<ScanResult>("scan_changes", { directories });
       const patch = scanPatchTrackerRef.current.finish(scanId, { roots: scanned.scopeDirectories, changes: scanned.changes });
       if (!patch) return undefined;
       const result = { ...scanned, changes: patch.changes };
@@ -546,7 +553,7 @@ export default function App() {
       const scanId = scanPatchTrackerRef.current.begin();
       if (announce) { partialScanCountRef.current += 1; setPartialScanLoading(true); }
       try {
-        const patch = await invoke<ScanPatch>("scan_changed_paths", {
+        const patch = await invokeScan<ScanPatch>("scan_changed_paths", {
           scopeDirectories: current.scopeDirectories,
           paths: refreshPathsForChanges(paths, current.changes),
           displayRoot: current.directory,
@@ -1419,14 +1426,16 @@ export default function App() {
   }, []);
 
   const refresh = useCallback(async () => {
-    if (!scan?.scopeDirectories.length || scanLoading || partialScanLoading || svnUpdate.running || svnUpdateLaunching) return;
+    if (!scan?.scopeDirectories.length || scanLoading || svnUpdate.running || svnUpdateLaunching) return;
+    // 完整刷新会使旧局部结果失效，不能先等待卡住的局部请求
+    const fullScan = scanDirectory(scan.scopeDirectories, true);
     const currentSelected = selectedRef.current;
     if (currentSelected && !currentSelected.isDirectory) {
-      await refreshChangedPaths([currentSelected.path], true, true);
+      void refreshChangedPaths([currentSelected.path], true, true);
     }
-    const result = await scanDirectory(scan.scopeDirectories, true);
+    const result = await fullScan;
     if (result) setToast(`已刷新当前目录：${result.changes.length} 项变更`);
-  }, [partialScanLoading, refreshChangedPaths, scan, scanDirectory, scanLoading, svnUpdate.running, svnUpdateLaunching]);
+  }, [refreshChangedPaths, scan, scanDirectory, scanLoading, svnUpdate.running, svnUpdateLaunching]);
 
   const toggleCommitSelection = useCallback((targets: ChangeEntry[], checked: boolean) => {
     if (!scan) return;
@@ -1671,7 +1680,7 @@ export default function App() {
             type="button"
             className="toolbar-button refresh-toolbar-button"
             onClick={() => void refresh()}
-            disabled={!scan || scanLoading || partialScanLoading || svnUpdate.running || svnUpdateLaunching}
+            disabled={!scan || scanLoading || svnUpdate.running || svnUpdateLaunching}
             title={svnUpdate.running
               ? "SVN Update 结束后会自动刷新"
               : "重新扫描当前打开目录的本地变更 (Ctrl+R)"}
