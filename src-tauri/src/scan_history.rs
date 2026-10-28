@@ -54,6 +54,32 @@ pub fn read(directory: &Path, scopes: &[String]) -> Option<ScanHistory> {
     (history.scopes == keys).then_some(history)
 }
 
+// 最近目录从独立的扫描历史恢复，不依赖某个窗口的浏览器缓存
+pub fn recent_directories(directory: &Path) -> Vec<String> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct RecentHistory { scopes: Vec<String>, saved_at: u64 }
+
+    let Ok(entries) = fs::read_dir(directory) else { return Vec::new(); };
+    let mut histories: Vec<RecentHistory> = entries.filter_map(Result::ok)
+        .filter(|entry| {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            name.starts_with("scan-v1-") && name.ends_with(".json")
+        })
+        .filter_map(|entry| serde_json::from_slice(&fs::read(entry.path()).ok()?).ok())
+        .collect();
+    histories.sort_by_key(|history| std::cmp::Reverse(history.saved_at));
+    let mut directories = Vec::new();
+    for history in histories {
+        for scope in history.scopes {
+            if !directories.contains(&scope) { directories.push(scope); }
+        }
+    }
+    directories.truncate(HISTORY_LIMIT);
+    directories
+}
+
 // 成功扫描后原子替换历史列表，最多保留最近 12 组目录
 #[cfg(test)]
 pub fn write(directory: &Path, scopes: &[String], scan: &ScanResult) -> Result<(), String> {
@@ -113,6 +139,14 @@ pub fn write_checkpoint(
 mod tests {
     use super::*;
     use crate::models::ChangeEntry;
+
+    #[test]
+    fn recent_directories_survive_a_new_webview_profile() {
+        let temporary = tempfile::tempdir().unwrap();
+        write(temporary.path(), &[r"E:\Project\Client".into()], &sample()).unwrap();
+        fs::write(temporary.path().join("scan-v1-invalid.json"), "broken").unwrap();
+        assert_eq!(recent_directories(temporary.path()), vec![r"e:\project\client"]);
+    }
 
     fn sample() -> ScanResult {
         ScanResult {

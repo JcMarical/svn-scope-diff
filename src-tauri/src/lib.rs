@@ -11,6 +11,7 @@ mod system_shell;
 mod tortoise_svn;
 mod watch_path_filter;
 mod working_copy_watcher;
+mod webview_profile;
 
 use models::{
     CommitLaunchResult, DiffResult, FileFingerprint, ScanPatch, ScanResult, SvnUpdateStatus,
@@ -48,6 +49,15 @@ struct LaunchDirectory(Option<String>);
 #[tauri::command]
 fn get_launch_directory(state: tauri::State<'_, LaunchDirectory>) -> Option<String> {
     state.0.clone()
+}
+
+#[tauri::command]
+async fn get_recent_directories(app: tauri::AppHandle) -> Vec<String> {
+    use tauri::Manager;
+    let Ok(cache) = app.path().app_cache_dir() else { return Vec::new(); };
+    tauri::async_runtime::spawn_blocking(move || scan_history::recent_directories(&cache.join("scan-history")))
+        .await
+        .unwrap_or_default()
 }
 
 #[tauri::command]
@@ -357,6 +367,19 @@ pub fn run() {
         .manage(working_copy_watcher::WorkingCopyWatcherManager::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .setup(|app| {
+            use tauri::Manager;
+            let scope = app.state::<LaunchDirectory>();
+            let profile = webview_profile::directory(
+                &app.path().app_local_data_dir()?,
+                scope.0.as_deref(),
+                &tauri::webview_version()?,
+            );
+            tauri::WebviewWindowBuilder::from_config(app.handle(), &app.config().app.windows[0])?
+                .data_directory(profile)
+                .build()?;
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             check_client_update,
             download_client_update,
@@ -383,7 +406,8 @@ pub fn run() {
             cancel_svn_update,
             get_working_copy_watcher_status,
             start_working_copy_watcher,
-            stop_working_copy_watcher
+            stop_working_copy_watcher,
+            get_recent_directories
         ])
         .run(tauri::generate_context!())
         .expect("error while running SVN Scope");

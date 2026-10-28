@@ -209,6 +209,13 @@ function getFileDiff(change: ChangeEntry) {
 
 export default function App() {
   const [recentDirectories, setRecentDirectories] = useState(readRecentDirectories);
+  useEffect(() => {
+    let active = true;
+    void invoke<string[]>("get_recent_directories").then((directories) => {
+      if (active) setRecentDirectories((history) => rememberDirectories(history, directories));
+    }).catch(() => { /* 当前窗口仍可使用已有的最近目录 */ });
+    return () => { active = false; };
+  }, []);
   const [draftContent, setDraftContent] = useState<string>();
   const draftRef = useRef<string | undefined>(undefined);
   const changeDraft = useCallback((content: string | undefined) => {

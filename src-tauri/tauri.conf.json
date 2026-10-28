@@ -13,6 +13,7 @@
     "windows": [
       {
         "label": "main",
+        "create": false,
         "title": "SVN Scope",
         "width": 1420,
         "height": 860,
